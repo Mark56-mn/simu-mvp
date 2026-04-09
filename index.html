@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simu MVP | Nigeria</title>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --accent: #38bdf8; --success: #22c55e; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { max-width: 400px; width: 100%; }
+        h1 { text-align: center; color: var(--accent); margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #94a3b8; font-size: 0.9rem; margin-bottom: 20px; }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        label { display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px; }
+        input { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 8px; font-size: 16px; box-sizing: border-box; margin-bottom: 10px; }
+        button { width: 100%; padding: 14px; background: var(--accent); color: #0f172a; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; transition: opacity 0.2s; }
+        button:active { opacity: 0.8; }
+        button.secondary { background: #334155; color: white; margin-top: 10px; }
+        .id-display { text-align: center; font-family: monospace; font-size: 1.4rem; letter-spacing: 2px; color: #fbbf24; margin: 10px 0; word-break: break-all; }
+        .status { margin-top: 10px; font-size: 0.9rem; text-align: center; min-height: 20px; }
+        .tx-item { background: #0f172a; padding: 10px; border-radius: 6px; margin-top: 8px; font-size: 0.85rem; border-left: 3px solid var(--accent); }
+        .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; background: #334155; margin-left: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🇳🇬 Simu Wallet</h1>
+    <p class="subtitle">Offline-First Beta Test</p>
+
+    <!-- Identity Section -->
+    <div class="card">
+        <label>Enter Phone Number (for SimID)</label>
+        <input type="tel" id="phoneInput" placeholder="+234..." oninput="generateSimID()">
+        
+        <div id="simIdResult" style="display:none;">
+            <label>Your Digital ID (SimID)</label>
+            <div class="id-display" id="simIdValue"></div>
+            <p style="font-size:0.75rem; color:#64748b; text-align:center;">✅ Stored locally. Hash ready for chain.</p>
+        </div>
+    </div>
+
+    <!-- Transaction Section -->
+    <div class="card">
+        <label>Recipient SimID</label>
+        <input type="text" id="recipientInput" placeholder="e.g. XK7M9P2R4T8WQ3N">
+                <label>Amount (SIM)</label>
+        <input type="number" id="amountInput" placeholder="Max 1000 for offline" max="1000">
+        
+        <button onclick="sendOfflineTX()">📡 Send via Bluetooth (Offline)</button>
+        <div class="status" id="txStatus"></div>
+    </div>
+
+    <!-- Queue Section -->
+    <div class="card">
+        <label>Offline Queue (Pending Sync)</label>
+        <div id="txQueueList">
+            <p style="color:#64748b; font-size:0.85rem; text-align:center;">No pending transactions</p>
+        </div>
+        <button class="secondary" onclick="syncQueue()">🔄 Sync to Mainnet</button>
+    </div>
+</div>
+
+<script>
+    // --- 1. Crypto Utils (Simulating noble/hashes for browser) ---
+    async function sha256(message) {
+        const msgBuffer = new TextEncoder().encode(message);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // --- 2. SimID Logic ---
+    let currentSimID = "";
+
+    async function generateSimID() {
+        const phone = document.getElementById('phoneInput').value;
+        if (phone.length < 10) return;
+
+        // Mock Public Key (In real app, this comes from wallet keypair)
+        const pubKey = "pubkey_demo_" + phone; 
+        
+        // Hash Phone
+        const phoneHash = await sha256(phone.trim());
+        
+        // Combine & Hash Again for SimID
+        const combined = pubKey + phoneHash;
+        const finalHash = await sha256(combined);
+        
+        // Format: Uppercase, Alphanumeric only, First 15 chars
+        currentSimID = finalHash.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 15);
+        
+        // Update UI
+        document.getElementById('simIdValue').innerText = currentSimID;
+        document.getElementById('simIdResult').style.display = 'block';
+    }
+    // --- 3. Offline Transaction Logic ---
+    const OFFLINE_LIMIT = 1000;
+    let txQueue = JSON.parse(localStorage.getItem('simu_tx_queue') || '[]');
+
+    async function sendOfflineTX() {
+        const recipient = document.getElementById('recipientInput').value;
+        const amount = parseFloat(document.getElementById('amountInput').value);
+        const statusEl = document.getElementById('txStatus');
+
+        if (!currentSimID) {
+            statusEl.innerText = "❌ Please enter phone number first";
+            statusEl.style.color = "#ef4444";
+            return;
+        }
+        if (!recipient || !amount) {
+            statusEl.innerText = "❌ Fill all fields";
+            statusEl.style.color = "#ef4444";
+            return;
+        }
+        if (amount > OFFLINE_LIMIT) {
+            statusEl.innerText = `❌ Max offline limit is ${OFFLINE_LIMIT} SIM`;
+            statusEl.style.color = "#ef4444";
+            return;
+        }
+
+        // Create Payload
+        const timestamp = Date.now();
+        const payload = `${currentSimID}:${recipient}:${amount}:${timestamp}`;
+        
+        // Mock Signature (In real app, sign with private key)
+        const signature = await sha256(payload + "secret_key_mock");
+
+        const tx = {
+            id: `tx_${timestamp}`,
+            from: currentSimID,
+            to: recipient,
+            amount: amount,
+            timestamp: timestamp,
+            signature: signature,
+            status: 'pending'
+        };
+
+        // Save to Queue
+        txQueue.push(tx);
+        localStorage.setItem('simu_tx_queue', JSON.stringify(txQueue));
+        
+        // Update UI
+        statusEl.innerText = "✅ Queued for Bluetooth Sync";
+        statusEl.style.color = "#22c55e";        document.getElementById('recipientInput').value = "";
+        document.getElementById('amountInput').value = "";
+        
+        renderQueue();
+    }
+
+    // --- 4. Queue Management ---
+    function renderQueue() {
+        const listEl = document.getElementById('txQueueList');
+        if (txQueue.length === 0) {
+            listEl.innerHTML = '<p style="color:#64748b; font-size:0.85rem; text-align:center;">No pending transactions</p>';
+            return;
+        }
+
+        listEl.innerHTML = txQueue.map(tx => `
+            <div class="tx-item">
+                <div><strong>${tx.amount} SIM</strong> → ${tx.to.slice(0,8)}...</div>
+                <div style="font-size:0.7rem; color:#94a3b8; margin-top:4px;">
+                    ${new Date(tx.timestamp).toLocaleTimeString()} 
+                    <span class="badge">${tx.status}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function syncQueue() {
+        if (txQueue.length === 0) {
+            alert("Queue is empty!");
+            return;
+        }
+        // Simulate Network Sync
+        const btn = event.target;
+        btn.innerText = "Syncing...";
+        setTimeout(() => {
+            txQueue = []; // Clear queue
+            localStorage.removeItem('simu_tx_queue');
+            renderQueue();
+            btn.innerText = "🔄 Sync to Mainnet";
+            alert("✅ All transactions synced to Simu Chain!");
+        }, 1500);
+    }
+
+    // Initial Render
+    renderQueue();
+</script>
+
+</body>
+</html>
